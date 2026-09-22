@@ -1,0 +1,73 @@
+{
+  "name": "prompt-sweeper",
+  "description": "Generate, grade and select prompts. Recommends the cheapest variant that holds quality, and refuses to recommend anything when the evidence does not support it.",
+  "transport": "stdio",
+  "command": "python3",
+  "args": [
+    "/projects/sandbox/Prompt-Sweeper/.kiro/mcp-servers/prompt-sweeper/server.py",
+    "--stdio"
+  ],
+  "env": {
+    "PYTHONPATH": "/projects/sandbox/Prompt-Sweeper/src:/projects/sandbox/Claude-Opus5/src"
+  },
+  "tools": [
+    {
+      "name": "prompt_sweep_generate",
+      "description": "Generate prompt variants with token costs and per-strategy rationale. Offline and free — no API key, no billing. Call this before prompt_sweep_run; the token table alone often settles the question.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "task": { "type": "string", "description": "The task the prompt should accomplish" },
+          "model": { "type": "string", "default": "claude-opus-5", "description": "Model id, for pricing only" },
+          "only": { "type": "array", "items": { "type": "string" }, "description": "Restrict to these strategies" },
+          "exclude": { "type": "array", "items": { "type": "string" }, "description": "Skip these strategies" }
+        },
+        "required": ["task"]
+      }
+    },
+    {
+      "name": "prompt_sweep_run",
+      "description": "Run every variant, grade the outputs, and recommend the cheapest one that clears the threshold. MAKES BILLED API CALLS: cost is variants x trials completions. Supply at least one grading criterion, otherwise it will decline to recommend anything.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "task": { "type": "string", "description": "The task the prompt should accomplish" },
+          "model": { "type": "string", "default": "claude-opus-5" },
+          "trials": { "type": "integer", "default": 1, "description": "Repeats per variant; 1 measures noise, 3 is a decision" },
+          "threshold": { "type": "number", "default": 1.0, "minimum": 0, "maximum": 1 },
+          "all_trials": { "type": "boolean", "default": false, "description": "Judge on the worst trial rather than the mean" },
+          "skip_redundant": { "type": "boolean", "default": false, "description": "Drop cot and self_check, which Opus 5's default thinking covers" },
+          "only": { "type": "array", "items": { "type": "string" } },
+          "exclude": { "type": "array", "items": { "type": "string" } },
+          "effort": { "type": "string", "enum": ["low", "medium", "high", "xhigh", "max"] },
+          "require": { "type": "array", "items": { "type": "string" }, "description": "Grade: substrings that must appear" },
+          "forbid": { "type": "array", "items": { "type": "string" }, "description": "Grade: substrings that must not appear" },
+          "regex": { "type": "string", "description": "Grade: pattern that must match" },
+          "json_output": { "type": "boolean", "default": false, "description": "Grade: response must be valid JSON" },
+          "python_code": { "type": "boolean", "default": false, "description": "Grade: every code block must parse" },
+          "no_placeholders": { "type": "boolean", "default": false, "description": "Grade: reject TODO, FIXME, ..." },
+          "max_words": { "type": "integer", "description": "Grade: penalise responses longer than this" },
+          "save": { "type": "boolean", "default": false, "description": "Record the winner for later recall" },
+          "no_aibrain": { "type": "boolean", "default": false, "description": "Skip the AIBrain decision write when saving" }
+        },
+        "required": ["task"]
+      }
+    },
+    {
+      "name": "prompt_sweep_recall",
+      "description": "Return the best previously recorded strategy for this kind of task. Offline and free. Call this before writing a prompt by hand — it is how a past sweep gets reused instead of repeated.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "task": { "type": "string", "description": "The task, used to derive its kind" }
+        },
+        "required": ["task"]
+      }
+    },
+    {
+      "name": "prompt_sweep_strategies",
+      "description": "List all strategies with what each fixes and when each wastes tokens. Offline and free.",
+      "inputSchema": { "type": "object", "properties": {} }
+    }
+  ]
+}
