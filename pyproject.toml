@@ -1,0 +1,48 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "prompt-sweeper"
+version = "0.1.0"
+description = "Generate, measure and pick prompts instead of guessing at them."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [{ name = "consecrating" }]
+keywords = ["prompt-engineering", "llm", "claude", "opus", "evaluation", "kiro"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Software Development :: Testing",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "ruff>=0.4"]
+
+[project.scripts]
+prompt-sweep = "promptsweeper.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/consecrating/Prompt-Sweeper"
+Source = "https://github.com/consecrating/Prompt-Sweeper"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/promptsweeper"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
