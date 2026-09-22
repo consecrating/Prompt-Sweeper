@@ -13,6 +13,7 @@ from promptsweeper.store import (
     load,
     recall,
     record,
+    record_to_aibrain,
     stats,
     store_path,
 )
@@ -126,3 +127,92 @@ def test_saved_ledger_is_valid_json(isolated_store):
     record(make_winner(), to_aibrain=False)
     raw = (isolated_store / "winners.json").read_text(encoding="utf-8")
     assert isinstance(json.loads(raw), list)
+
+
+
+# ---------------------------------------------------------------------------
+# AIBrain write guard
+#
+# A decision in a persistent memory layer is read later as evidence, and
+# nothing in it reveals that its numbers were never measured. These tests pin
+# the refusals that stop an unmeasured result becoming a durable claim.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def fake_aibrain(tmp_path, monkeypatch):
+    """A minimal AIBrain checkout that records what brain.sh was called with."""
+    root = tmp_path / "AIBrain"
+    (root / "scripts").mkdir(parents=True)
+    log = root / "calls.log"
+    script = root / "scripts" / "brain.sh"
+    script.write_text(
+        '#!/usr/bin/env bash\nprintf "%s\\n" "$@" >> "$(dirname "$0")/../calls.log"\n',
+        encoding="utf-8",
+    )
+    script.chmod(0o755)
+    monkeypatch.setenv("AIBRAIN_ROOT", str(root))
+    return root, log
+
+
+def test_ungraded_winner_is_refused_and_never_written(fake_aibrain):
+    root, log = fake_aibrain
+    status = record_to_aibrain(make_winner(graded=False))
+    assert status is not None
+    assert "refused" in status
+    assert "ungraded" in status
+    assert not log.exists(), "an ungraded result must never reach the decision log"
+
+
+def test_zero_trial_winner_is_refused(fake_aibrain):
+    root, log = fake_aibrain
+    status = record_to_aibrain(make_winner(trials=0))
+    assert "refused" in status
+    assert not log.exists()
+
+
+def test_graded_winner_is_written_with_provenance(fake_aibrain):
+    root, log = fake_aibrain
+    status = record_to_aibrain(make_winner(graded=True, trials=3))
+    assert "recorded in AIBrain" in status
+    args = log.read_text(encoding="utf-8")
+    assert "decide" in args
+    # Provenance marker makes the entry attributable and auditable later.
+    assert "prompt-sweeper:" in args
+    assert "3 graded trial(s)" in args
+
+
+def test_negative_savings_is_not_logged_as_cheaper(fake_aibrain):
+    """A quality win that costs more must not be recorded as a saving."""
+    root, log = fake_aibrain
+    record_to_aibrain(make_winner(savings_vs_baseline=-7.14))
+    args = log.read_text(encoding="utf-8")
+    assert "more expensive than baseline" in args
+    assert "cheaper" not in args
+
+
+def test_positive_savings_reads_as_cheaper(fake_aibrain):
+    root, log = fake_aibrain
+    record_to_aibrain(make_winner(savings_vs_baseline=0.4))
+    args = log.read_text(encoding="utf-8")
+    assert "40% cheaper than baseline" in args
+
+
+def test_record_surfaces_the_refusal_to_the_caller(fake_aibrain):
+    info = record(make_winner(graded=False), to_aibrain=True)
+    # The local ledger still gets the row; only the durable claim is withheld.
+    assert info["entries"] == 1
+    assert "refused" in info["aibrain"]
+
+
+def test_brain_script_failure_is_reported_not_raised(tmp_path, monkeypatch):
+    root = tmp_path / "AIBrain"
+    (root / "scripts").mkdir(parents=True)
+    script = root / "scripts" / "brain.sh"
+    script.write_text("#!/usr/bin/env bash\necho 'boom' >&2\nexit 1\n", encoding="utf-8")
+    script.chmod(0o755)
+    monkeypatch.setenv("AIBRAIN_ROOT", str(root))
+
+    status = record_to_aibrain(make_winner())
+    assert "failed" in status
+    # Losing a bookkeeping write must not discard calls already paid for.

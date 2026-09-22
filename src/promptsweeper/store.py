@@ -118,17 +118,34 @@ def record_to_aibrain(winner: Winner) -> str | None:
     Returns a status string, or ``None`` when AIBrain is not installed. Failures
     are reported rather than raised: losing a bookkeeping write must not fail a
     sweep that already cost real money.
+
+    Refuses to write an unmeasured result. A decision in a persistent memory
+    layer is read later as evidence, with no way to tell that the numbers in it
+    were never measured — so an ungraded sweep must not be able to deposit one.
+    The whole value of the brain is that entries in it can be trusted.
     """
+    if not winner.graded:
+        return (
+            "refused: sweep was ungraded, so there is no measurement to record. "
+            "Re-run with a grading criterion to produce evidence worth keeping."
+        )
+    if winner.trials < 1:
+        return "refused: no trials completed, so the result is not evidence"
+
     root = find_aibrain()
     if not root:
         return None
 
     saved = ""
     if winner.savings_vs_baseline is not None:
-        saved = f", {winner.savings_vs_baseline * 100:.0f}% cheaper than baseline"
+        pct = winner.savings_vs_baseline * 100
+        # Signed: a quality win that costs more must not be logged as "cheaper".
+        direction = "cheaper than" if pct >= 0 else "more expensive than"
+        saved = f", {abs(pct):.0f}% {direction} baseline"
     decision = f"For {winner.task_kind} tasks, use the '{winner.strategy}' prompt strategy"
+    # "prompt-sweeper:" marks provenance, so an entry can be attributed and audited.
     reason = (
-        f"Swept {winner.trials} trial(s) on {winner.model}: "
+        f"prompt-sweeper: {winner.trials} graded trial(s) on {winner.model}, "
         f"score {winner.score:.2f}, ${winner.cost_usd:.4f}/request{saved}"
     )
 
